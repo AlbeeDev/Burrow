@@ -1,0 +1,277 @@
+@import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+  Burrow design system: "same messaging bones, bolder identity".
+  Warm-dark theme (soil / underground), single ember accent, terminal character.
+  Radius scale (Shape Lock): controls 8px (rounded-lg), panels/bubbles 12px (rounded-xl),
+  chips + toggles full-pill. One accent (ember) used everywhere.
+*/
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  --color-bg: #13100c;        /* page */
+  --color-surface: #1b1610;   /* sidebar, header */
+  --color-raised: #241d15;    /* bubbles, inputs, hover */
+  --color-line: #322a20;      /* borders */
+  --color-line-soft: #262019; /* faint dividers */
+  --color-ink: #efe9e0;       /* primary text */
+  --color-muted: #a89c8b;     /* secondary text */
+  --color-faint: #6f6556;     /* tertiary text */
+
+  --color-accent: #f2792b;    /* ember / burnt orange */
+  --color-accent-2: #ffa25c;  /* lighter ember for hover/highlight */
+  --color-accent-soft: #2a1d12;/* accent-tinted surface */
+
+  --color-ok: #5fb87a;
+  --color-danger: #e5604d;
+}
+
+/*
+  Alternate palettes: same token roles, different worlds. Selected via
+  data-theme on <html> (lib/theme.ts, persisted per-browser). Ember above is
+  the default (no attribute). Each keeps the dark warm-neutral structure and
+  swaps hue family + accent, so every component works unchanged.
+*/
+[data-theme="moss"] {
+  --color-bg: #0e120c;
+  --color-surface: #141a11;
+  --color-raised: #1b2417;
+  --color-line: #2a3424;
+  --color-line-soft: #1f2819;
+  --color-ink: #e8eee1;
+  --color-muted: #9cab90;
+  --color-faint: #616f55;
+  --color-accent: #8fc866;
+  --color-accent-2: #b4e08b;
+  --color-accent-soft: #1a2413;
+}
+[data-theme="ocean"] {
+  --color-bg: #0b0f14;
+  --color-surface: #10161d;
+  --color-raised: #161f29;
+  --color-line: #233142;
+  --color-line-soft: #1a2530;
+  --color-ink: #e4ecf3;
+  --color-muted: #8fa4b6;
+  --color-faint: #566a7d;
+  --color-accent: #4da3e5;
+  --color-accent-2: #7fc0f0;
+  --color-accent-soft: #12202e;
+}
+[data-theme="violet"] {
+  --color-bg: #100d15;
+  --color-surface: #16121d;
+  --color-raised: #1e1827;
+  --color-line: #2d2439;
+  --color-line-soft: #221a2c;
+  --color-ink: #ece7f3;
+  --color-muted: #a396b6;
+  --color-faint: #6a5f7d;
+  --color-accent: #a875e8;
+  --color-accent-2: #c49bf2;
+  --color-accent-soft: #20172b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ember selection everywhere, including inside the terminal. */:selection {
+  background: color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+
+/* Slim, warm scrollbars that match the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*:-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*:-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+}
+*:-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-accent) 40%, var(--color-line));
+}
+
+/*
+ * The layout scroller scrolls natively but draws no scrollbar, `ScrollRail` renders one we own.
+ * Two failed attempts at a fat native bar are the reason (2026-08-05): `:-webkit-scrollbar` is
+ * Chrome/Safari-only and Firefox's `scrollbar-width` has no size to give, so "three or four times
+ * thicker" is not expressible natively across browsers. Hiding it here avoids showing both.
+ */
+.rail-scroll {
+  scrollbar-width: none;
+}
+.rail-scroll:-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * driver.js ships a white popover with a blue button, which lands in the middle of Burrow's dark
+ * UI looking like a browser dialog rather than part of the app. Restyled against the theme's own
+ * variables so it follows whichever theme is active, instead of being pinned to one palette.
+ */
+.driver-popover.burrow-tour {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: 0.9rem;
+  box-shadow: 0 18px 45px rgb(0 0 0 / 0.55);
+  max-width: 22rem;
+}
+.driver-popover.burrow-tour .driver-popover-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+.driver-popover.burrow-tour .driver-popover-description {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+/* The arrow is a bordered triangle; each side colours a different edge. */
+.driver-popover.burrow-tour .driver-popover-arrow-side-left { border-left-color: var(--color-surface); }
+.driver-popover.burrow-tour .driver-popover-arrow-side-right { border-right-color: var(--color-surface); }
+.driver-popover.burrow-tour .driver-popover-arrow-side-top { border-top-color: var(--color-surface); }
+.driver-popover.burrow-tour .driver-popover-arrow-side-bottom { border-bottom-color: var(--color-surface); }
+
+.driver-popover.burrow-tour .driver-popover-footer button {
+  background: transparent;
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+  color: var(--color-muted);
+  text-shadow: none;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.7rem;
+}
+.driver-popover.burrow-tour .driver-popover-footer button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+/* The one affirmative action gets the accent fill; skipping stays quiet. */
+.driver-popover.burrow-tour .driver-popover-footer .driver-popover-next-btn {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg);
+  font-weight: 600;
+}
+
+/* Give the embedded terminal room to breathe inside its panel. */
+.xterm {
+  padding: 12px 14px;
+  height: 100%;
+}
+.xterm-viewport {
+  background: transparent !important;
+}
+
+/* Markdown rendering for Claude's replies. Tight, dark, matches the bubble. */
+.burrow-md {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.burrow-md >:first-child {
+  margin-top: 0;
+}
+.burrow-md >:last-child {
+  margin-bottom: 0;
+}
+.burrow-md p {
+  margin: 0.5rem 0;
+}
+.burrow-md h1,
+.burrow-md h2,
+.burrow-md h3,
+.burrow-md h4 {
+  margin: 0.9rem 0 0.4rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.burrow-md h1 { font-size: 1.15rem; }
+.burrow-md h2 { font-size: 1.05rem; }
+.burrow-md h3 { font-size: 0.98rem; }
+.burrow-md ul,
+.burrow-md ol {
+  margin: 0.4rem 0;
+  padding-left: 1.3rem;
+}
+.burrow-md li { margin: 0.15rem 0; }
+.burrow-md a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.burrow-md code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--color-bg);
+  border: 1px solid var(--color-line);
+  border-radius: 5px;
+  padding: 0.05rem 0.3rem;
+}
+.burrow-md pre {
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.85rem;
+  background: #0d0b07;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.burrow-md pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.burrow-md blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--color-line);
+  color: var(--color-muted);
+}
+.burrow-md table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  display: block;
+  overflow-x: auto;
+}
+.burrow-md th,
+.burrow-md td {
+  border: 1px solid var(--color-line);
+  padding: 0.3rem 0.55rem;
+  text-align: left;
+}
+.burrow-md hr {
+  margin: 0.8rem 0;
+  border: 0;
+  border-top: 1px solid var(--color-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

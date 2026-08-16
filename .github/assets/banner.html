@@ -1,0 +1,155 @@
+<!doctype html>
+<!--
+  Source for banner.png. Render with:
+
+      node .github/assets/render-banner.mjs
+
+  Edit the wording here rather than in an image editor, and re-run. Colours and fonts are the
+  app's own, read from app/src/index.css and app/node_modules, so the banner cannot drift away
+  from what the product looks like.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: "Geist";
+    src: url("../../app/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");
+    font-weight: 100 900;
+  }
+  @font-face {
+    font-family: "JetBrains Mono";
+    src: url("../../app/node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+    font-weight: 100 800;
+  }
+
+  :root {
+    --bg: #13100c;
+    --surface: #1b1610;
+    --raised: #241d15;
+    --line: #322a20;
+    --ink: #efe9e0;
+    --muted: #a89c8b;
+    --faint: #6f6556;
+    --accent: #f2792b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1280px;
+    height: 520px;
+    background: var(--bg);
+    font-family: "Geist", system-ui, sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* A warm bloom off to the left, behind the wordmark. */
+  .glow {
+    position: absolute;
+    width: 900px; height: 900px;
+    left: 18%; top: 55%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(242,121,43,0.10) 0%, rgba(242,121,43,0.03) 40%, transparent 62%);
+  }
+
+  .frame {
+    position: relative;
+    height: 100%;
+    padding: 56px 84px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── top left: logo + wordmark, "open source" underneath ─────────────── */
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand svg { width: 64px; height: 64px; }
+  .brand .name {
+    font-size: 44px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+  /* bottom left, where the composition had an empty corner */
+  .oss {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 17px;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  /* ── the middle: title left, dot list right ──────────────────────────── */
+  .middle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 60px;
+  }
+
+  .titles { max-width: 640px; }
+  h1 {
+    font-size: 58px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.08;
+  }
+  h2 {
+    margin-top: 20px;
+    font-size: 25px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--muted);
+  }
+
+  .points {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 17px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 19px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .points li { display: flex; align-items: center; gap: 14px; }
+  .points .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(242,121,43,0.7);
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="frame">
+    <div>
+      <div class="brand">
+        <svg viewBox="0 0 512 512"><circle cx="256" cy="256" r="205" fill="#f2792b"/><path d="M 412.9 249.4 L 347.5 285.0 L 361.3 336.7 L 307.6 337.0 L 279.8 382.8 L 240.4 350.7 L 183.4 371.6 L 180.2 314.9 L 126.6 299.7 L 160.0 253.8 L 99.4 207.2 L 179.6 197.8 L 191.4 140.2 L 240.7 161.2 L 278.1 104.4 L 301.5 171.5 L 371.8 169.1 L 347.9 228.1 Z" fill="#13100c"/></svg>
+        <span class="name">Burrow</span>
+      </div>
+    </div>
+
+    <div class="middle">
+      <div class="titles">
+        <h1>Manage your terminal projects from the web</h1>
+        <h2>A self-hosted web interface for Claude Code</h2>
+      </div>
+      <ul class="points">
+        <li><span class="dot"></span>always on</li>
+        <li><span class="dot"></span>any device</li>
+        <li><span class="dot"></span>terminal &amp; chat</li>
+        <li><span class="dot"></span>integrated MCP</li>
+        <li><span class="dot"></span>file browser</li>
+        <li><span class="dot"></span>addons</li>
+      </ul>
+    </div>
+
+    <div class="oss">open source</div>
+  </div>
+</body>
+</html>

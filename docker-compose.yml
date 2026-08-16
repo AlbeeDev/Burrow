@@ -1,0 +1,103 @@
+name: burrow
+
+# Written by `node scripts/docker-setup.mjs`, it asks three questions and produces the .env this
+# file reads. Editing this file by hand is supported but should not be necessary.
+#
+# Two deployments come out of one file:
+#   docker compose up -d --build     → reachable at http://127.0.0.1:<port> on this machine
+#   …with COMPOSE_PROFILES=tailscale → plus a Tailscale sidecar publishing it on your tailnet
+#
+# The sidecar is a profile rather than a second compose file so there is one thing to maintain and
+# one thing to keep true. The installer writes COMPOSE_PROFILES into .env when you ask for it, so
+# the command you type stays the same either way.
+
+services:
+  app:
+    build: .
+    container_name: burrow-app
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      # UTF-8 locale so Claude's TUI renders real Unicode box-drawing/arrows instead of
+      # ASCII fallbacks (the container ships no locale by default).
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+      - BURROW_BIND=0.0.0.0
+      # Fixed INSIDE the container, deliberately: the sidecar's tailscale/serve.json proxies to
+      # burrow-app:8317 by name. What you choose in the installer is the port on the HOST, in
+      # `ports` below. (`environment` wins over `env_file`, so a BURROW_PORT in .env, which is
+      # the host port: cannot accidentally move the internal one.)
+      - BURROW_PORT=8317
+      # Your home directory, mounted below at the same path. Node's homedir() reads $HOME, and that
+      # is how the server finds ~/.claude, ~/.burrow and ~/.bashrc, so this must be the home that
+      # actually holds them, never a subfolder.
+      #
+      # Where projects are SCANNED is a separate question, answered by BURROW_PROJECTS_ROOT in .env
+      # (deliberately not repeated here: env_file already supplies it, and the server falls back to
+      # $HOME when it is absent, which is the right default). Collapsing the two was the first
+      # version's bug: pointing Burrow at ~/projects also moved HOME there, and it then looked for
+      # a Claude login in a directory that had never held one.
+      - HOME=${BURROW_HOME:-/root}
+      # The container is only reachable through the loopback port mapping below, or through the
+      # sidecar on the internal network. Neither is the open network, so binding 0.0.0.0 inside
+      # the container is safe. See server/src/index.ts.
+      - BURROW_TRUST_NETWORK=1
+      # The container runs as root so it can operate on the mounted directory; Claude Code refuses
+      # bypassPermissions as root unless the environment is marked a sandbox.
+      # (Drop this once interactive approve/deny lands in the UI.)
+      - IS_SANDBOX=1
+      # Run tmux/claude in the HOST namespaces (via nsenter) for full tool parity with a
+      # native SSH session, and so sessions live on the host tmux server (survive rebuilds).
+      # Requires privileged + pid:host below. Set to 0 to fall back to in-container mode.
+      - BURROW_HOST_EXEC=1
+      # CLAUDE_CODE_OAUTH_TOKEN comes from .env (Claude mode). Optional BURROW_TOKEN too.
+    ports:
+      # Loopback only, matching the bare install's default. Burrow hands a browser a shell on this
+      # machine, so it does not go on the open network by accident, reaching it from elsewhere is
+      # the Tailscale profile's job, or your own reverse proxy.
+      - "127.0.0.1:${BURROW_PORT:-8317}:8317"
+    volumes:
+      # Mounted at the SAME path inside and out. Not cosmetic: with host-exec, tmux and claude run
+      # on the host, so a project path the container reports has to exist unchanged out there.
+      # A projects root outside this home gets a second mount, in docker-compose.override.yml,
+      # written by the installer when the answer calls for it.
+      - ${BURROW_HOME:-/root}:${BURROW_HOME:-/root}
+    # Host-exec needs to enter PID 1's namespaces: share the host PID namespace and run
+    # privileged so nsenter can cross into the host mount/net/ipc/uts/pid namespaces.
+    pid: host
+    privileged: true
+    restart: unless-stopped
+    networks:
+      - burrow-network
+
+  tailscale:
+    # Opt-in. Without COMPOSE_PROFILES=tailscale in .env this service does not start at all, which
+    # is what makes a plain `docker compose up -d` work for someone who has never heard of
+    # Tailscale: it used to crash-loop on an auth key they had no reason to own.
+    profiles: ["tailscale"]
+    image: tailscale/tailscale:latest
+    container_name: burrow-tailscale
+    hostname: ${BURROW_TS_HOSTNAME:-burrow}
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${BURROW_TS_HOSTNAME:-burrow}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale:/config
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    networks:
+      - burrow-network
+
+networks:
+  burrow-network:
+    driver: bridge
+
+volumes:
+  tailscale-state:

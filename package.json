@@ -1,0 +1,30 @@
+{
+  "name": "burrow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A browser front door to your own machine for running Claude Code, sessions live on the server, any browser attaches.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "comment": [
+    "The root package exists to give Burrow ONE install, not to make it a workspace.",
+    "app/ and server/ stay independent packages with their own lockfiles because the",
+    "Dockerfile builds them in separate stages (app in the web stage, server in the",
+    "runtime stage) and never copies this file. Hoisting to a shared root node_modules",
+    "would break that split for no gain.",
+    "",
+    "postinstall is what makes `npm install` do the whole job, install both halves,",
+    "build the frontend into server/web, then run the preflight checks. See scripts/setup.mjs."
+  ],
+  "scripts": {
+    "postinstall": "node scripts/setup.mjs",
+    "setup": "node scripts/setup.mjs",
+    "start": "npm --prefix server start",
+    "dev": "npm --prefix server run dev",
+    "doctor": "npm --prefix server run doctor",
+    "build": "npm --prefix app run build",
+    "test": "npm --prefix server test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix app run typecheck"
+  }
+}

@@ -1,0 +1,35 @@
+# deps
+**/node_modules
+
+# Local secrets. Broad on purpose: `.env` and `**/.env` alone left `.env.backup`,
+# `.env.local` and `.env.old-key.bak` perfectly committable, checked, and they were.
+# This repo's predecessor had an admin key in its history from the first commit, which is
+# the entire reason it exists as a fresh tree, so the rule is a name prefix and not a
+# name.
+.env*
+**/.env*
+!.env.example
+!**/.env.example
+
+# build output
+**/dist
+app/.vite
+server/web
+
+# Images are ignored by default and allowed back by location, so a screenshot dropped
+# while debugging cannot drift into the repo. (The old tree accumulated 31 loose PNGs at
+# its root, some showing real project names.) Anything that IS an asset lives somewhere
+# named, and is listed here.
+*.png
+!app/public/**/*.png
+!docs/images/**/*.png
+!.github/assets/**/*.png
+
+# tooling / scratch
+.playwright-mcp/
+*.log
+.codegraph/
+
+# maintainer's own notes: roadmap, shipping plan, night logs. Never public.
+private/
+CLAUDE.md

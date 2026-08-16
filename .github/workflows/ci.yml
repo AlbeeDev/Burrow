@@ -1,0 +1,60 @@
+# The verification gate, run by the repo instead of by whoever remembers.
+#
+# Same two commands CLAUDE.md asks for before calling anything done. `npm run typecheck` plus the
+# test suite in server/, and `npm run build` in app/, which is `tsc --noEmit` followed by the real
+# Vite build. Nothing here is CI-only: if this passes and your machine does not, the difference is
+# your machine.
+#
+# The live harnesses are deliberately absent. They spawn real `claude` processes against a real
+# account, so they need an OAuth token, which does not belong in a public repository's CI, not even
+# as a secret. They stay a local step, documented in CLAUDE.md, run before touching claude.ts or
+# terminal.ts.
+#
+# The two jobs run in parallel because they share nothing: app/ and server/ are separate packages
+# (not a workspace), which is also why each installs from its own lockfile.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    name: server (typecheck + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The floor package.json declares. Testing on the oldest supported version is the point:
+          # passing on 22 tells you nothing about somebody running 20.
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # `ci`, not `install`: it installs exactly the lockfile and fails if package.json disagrees,
+      # so a dependency cannot quietly drift between here and a fresh clone.
+      - run: npm ci
+        working-directory: server
+      - run: npm run typecheck
+        working-directory: server
+      - run: npm test
+        working-directory: server
+
+  app:
+    name: app (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      # Typechecks and builds for real. A build that only typechecks lets a Vite-time failure
+      # (a missing asset, a bad import path) reach a user who cloned a green commit.
+      - run: npm run build
+        working-directory: app
