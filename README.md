@@ -124,6 +124,7 @@ outputs the format in [USAGE-PROVIDER.md](USAGE-PROVIDER.md) works too.
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [Security and trust model](docs/trust.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Feedback
 
