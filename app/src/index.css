@@ -76,6 +76,42 @@
   --color-accent-soft: #20172b;
 }
 
+/*
+  Light mode is orthogonal to the theme: data-mode="light" on <html> overrides only the neutral
+  base tokens, so the active theme's accent shows through unchanged (accent-soft is derived from
+  it). The terminal keeps its own dark palette.
+*/
+html[data-mode="light"] {
+  --color-bg: color-mix(in oklab, var(--color-accent) 9%, #fbf0dd);
+  --color-surface: color-mix(in oklab, var(--color-accent) 6%, #fff7ea);
+  --color-raised: color-mix(in oklab, var(--color-accent) 13%, #f3e6cf);
+  --color-line: color-mix(in oklab, var(--color-accent) 18%, #e7d7bc);
+  --color-line-soft: color-mix(in oklab, var(--color-accent) 11%, #efe1c8);
+  --color-ink: #241a0f;
+  --color-muted: #574a39;
+  --color-faint: #7c6b54;
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 22%, #fff7ea);
+}
+
+/*
+  The shared cream base is warm, which mutes the cool accents. Ocean and Violet get a cooler,
+  near-neutral base and a bit more accent so their color reads. Text tokens are inherited.
+*/
+html[data-mode="light"][data-theme="ocean"] {
+  --color-bg: color-mix(in oklab, var(--color-accent) 13%, #f1f2f1);
+  --color-surface: color-mix(in oklab, var(--color-accent) 8%, #fbfcfc);
+  --color-raised: color-mix(in oklab, var(--color-accent) 17%, #e9eced);
+  --color-line: color-mix(in oklab, var(--color-accent) 24%, #d8dee3);
+  --color-line-soft: color-mix(in oklab, var(--color-accent) 15%, #e6eaec);
+}
+html[data-mode="light"][data-theme="violet"] {
+  --color-bg: color-mix(in oklab, var(--color-accent) 12%, #f3f1f4);
+  --color-surface: color-mix(in oklab, var(--color-accent) 8%, #fcfbfd);
+  --color-raised: color-mix(in oklab, var(--color-accent) 16%, #ebe8ee);
+  --color-line: color-mix(in oklab, var(--color-accent) 23%, #ddd7e3);
+  --color-line-soft: color-mix(in oklab, var(--color-accent) 15%, #e8e5ec);
+}
+
 html,
 body,
 #root {

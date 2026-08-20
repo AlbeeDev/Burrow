@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { X, GearSix, Skull, CaretRight } from "@phosphor-icons/react";
 import { ShortcutsModal } from "./ShortcutsModal";
 import { useGateway } from "../lib/useGateway";
-import { THEMES, applyTheme, currentTheme } from "../lib/theme";
+import { THEMES, applyTheme, currentTheme, applyMode, currentMode, type Mode } from "../lib/theme";
 import { FONT_DEFAULT, FONT_MAX, FONT_MIN, setTermFontSize, termFontSize } from "../lib/termFont";
 import { keyLabel, SHORTCUTS } from "../lib/shortcuts";
 import { TailscaleRow } from "./TailscaleRow";
@@ -53,6 +53,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const { gateway, status, activeSessions, masterActive } = useGateway();
 
   const [theme, setTheme] = useState(currentTheme());
+  const [mode, setMode] = useState<Mode>(currentMode());
   const [font, setFont] = useState(termFontSize());
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [confirmKill, setConfirmKill] = useState(false);
@@ -114,6 +115,23 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   <span className="text-[11px] font-medium" style={{ color: t.swatch[2] }}>
                     {t.label}
                   </span>
+                </button>
+              ))}
+            </div>
+            {/* Light/dark is orthogonal to the accent theme above (see lib/theme.ts). */}
+            <div className="mt-3 flex gap-2">
+              {(["dark", "light"] as Mode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    applyMode(m);
+                    setMode(m);
+                  }}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition-colors ${
+                    mode === m ? "border-accent text-ink": "border-line text-muted hover:border-accent/40"
+                  }`}
+                >
+                  {m}
                 </button>
               ))}
             </div>

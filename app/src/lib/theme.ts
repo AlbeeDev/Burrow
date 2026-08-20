@@ -41,3 +41,34 @@ export function applyTheme(id: string): void {
 export function initTheme(): void {
   applyTheme(currentTheme());
 }
+
+/**
+ * Light/dark mode, orthogonal to the accent theme: it flips only the neutral base tokens (see the
+ * `data-mode="light"` block in index.css), so any theme's accent works in either mode.
+ */
+export type Mode = "dark" | "light";
+
+const MODE_KEY = "burrow.mode";
+
+export function currentMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "light" ? "light": "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+export function applyMode(mode: Mode): void {
+  if (mode === "light") document.documentElement.dataset.mode = "light";
+  else delete document.documentElement.dataset.mode;
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    /* private mode / storage disabled: the choice just won't persist */
+  }
+}
+
+/** Boot hook: apply the saved mode before first paint. */
+export function initMode(): void {
+  applyMode(currentMode());
+}
