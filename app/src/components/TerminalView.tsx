@@ -49,6 +49,11 @@ export function TerminalView({ project, autoFocus = true }: { project: string | 
   // Project terminals auto-launch Claude; cover the raw startup with a loading overlay
   // until the first output arrives. Master (null) is a plain shell, no overlay.
   const [booting, setBooting] = useState(project !== null);
+  // Touch devices only: a phone keyboard has no arrow/Esc/Ctrl keys, so a native TUI menu
+  // (resume prompt, permission ask, /model) is unanswerable. Desktop keeps its real keyboard.
+  const [isTouch] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true,
+  );
 
   // Paste = clipboard → terminal input (right-click on desktop, button on mobile).
   // Safety: strip control chars (a stray tmux prefix / ESC in the clipboard would otherwise
@@ -285,49 +290,74 @@ export function TerminalView({ project, autoFocus = true }: { project: string | 
   }
   return (
     <Panel>
-      <div className="relative h-full w-full">
-        {/* Right-click pastes (and never shows the browser's context menu). */}
-        <div
-          ref={hostRef}
-          className="h-full w-full"
-          onContextMenu={(e) => {
-            e.preventDefault();
-            paste();
-          }}
-        />
-        {/* Copy/Paste toolbar: works on touch where there's no right-click or Shift. */}
-        <div className="absolute right-2.5 top-2.5 z-20 flex gap-1">
-          <button
-            onClick={copy}
-            title="Copy selection (or visible screen)"
-            aria-label="Copy"
-            className="grid size-7 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
-          >
-            <Copy size={14} weight="bold" />
-          </button>
-          <button
-            onClick={paste}
-            title="Paste from clipboard"
-            aria-label="Paste"
-            className="grid size-7 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
-          >
-            <ClipboardText size={14} weight="bold" />
-          </button>
-        </div>
-        {booting && (
-          <div className="absolute inset-0 grid place-items-center bg-[#161009]">
-            <div className="flex flex-col items-center gap-3 text-muted">
-              <div className="flex gap-1">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="size-1.5 animate-bounce rounded-full bg-accent"
-                    style={{ animationDelay: `${i * 120}ms` }}
-                  />
-                ))}
+      <div className="flex h-full w-full flex-col">
+        <div className="relative min-h-0 flex-1">
+          {/* Right-click pastes (and never shows the browser's context menu). */}
+          <div
+            ref={hostRef}
+            className="h-full w-full"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              paste();
+            }}
+          />
+          {/* Copy/Paste toolbar: works on touch where there's no right-click or Shift. */}
+          <div className="absolute right-2.5 top-2.5 z-20 flex gap-1">
+            <button
+              onClick={copy}
+              title="Copy selection (or visible screen)"
+              aria-label="Copy"
+              className="grid size-7 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
+            >
+              <Copy size={14} weight="bold" />
+            </button>
+            <button
+              onClick={paste}
+              title="Paste from clipboard"
+              aria-label="Paste"
+              className="grid size-7 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
+            >
+              <ClipboardText size={14} weight="bold" />
+            </button>
+          </div>
+          {booting && (
+            <div className="absolute inset-0 grid place-items-center bg-[#161009]">
+              <div className="flex flex-col items-center gap-3 text-muted">
+                <div className="flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="size-1.5 animate-bounce rounded-full bg-accent"
+                      style={{ animationDelay: `${i * 120}ms` }}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm">Starting Claude…</span>
               </div>
-              <span className="text-sm">Starting Claude…</span>
             </div>
+          )}
+        </div>
+        {/* Touch-only key bar: sends the terminal signals a phone keyboard can't. `term.input`
+            feeds them through the same path as typing, so no server change. Scrolling is untouched
+            (it already works by touch). */}
+        {isTouch && (
+          <div className="flex shrink-0 items-stretch gap-1 border-t border-line bg-[#161009] px-1.5 py-1.5">
+            {[
+              { label: "↑", seq: "\x1b[A", aria: "Arrow up" },
+              { label: "↓", seq: "\x1b[B", aria: "Arrow down" },
+              { label: "↵", seq: "\r", aria: "Enter" },
+              { label: "esc", seq: "\x1b", aria: "Escape" },
+              { label: "^C", seq: "\x03", aria: "Interrupt (Ctrl-C)" },
+            ].map((k) => (
+              <button
+                key={k.label}
+                aria-label={k.aria}
+                onClick={() => termRef.current?.input(k.seq)}
+                className="flex-1 rounded-md border border-line bg-black/30 py-2 font-mono text-sm text-muted active:bg-raised active:text-ink"
+              >
+                {k.label}
+              </button>
+            ))}
           </div>
         )}
       </div>
