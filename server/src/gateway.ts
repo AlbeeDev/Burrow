@@ -329,7 +329,7 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
      * the answer decides whether a browser executes the file as a document.
      */
     if (isPush) {
-      const [, id, ...rest] = url.pathname.split("/");
+      const [, , id, ...rest] = url.pathname.split("/");
       const sub = rest.map(decodeURIComponent).join("/");
       const found = id && sub ? await images.resolve(id, sub): null;
       if (!found) {
