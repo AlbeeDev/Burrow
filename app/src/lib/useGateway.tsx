@@ -22,7 +22,9 @@ type GatewayContextValue = {
   assignments: Assignments;
   accounts: string[];
   activeAccount: string;
-  setAccount: (id: string) => void;
+  setAccount: (id: string, refresh?: { project: string | null }) => Promise<void>;
+  /** Bumped to force a terminal remount, e.g. after an account switch relaunches `claude -c`. */
+  terminalNonce: number;
   model: string;
   setModel: (m: string) => void;
   activeSessions: Set<string>;
@@ -72,6 +74,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   const [onboarding, setOnboarding] = useState<{ tourDone: boolean; hintsSeen: Set<string> } | null>(null);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [activeAccount, setActiveAccount] = useState<string>("");
+  const [terminalNonce, setTerminalNonce] = useState(0);
   const [model, setModelState] = useState<string>(() => localStorage.getItem("burrow.model") ?? "");
 
   const [activeSessions, setActiveSessions] = useState<Set<string>>(new Set());
@@ -249,11 +252,23 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   );
 
   const setAccount = useCallback(
-    (id: string) => {
+    (id: string, refresh?: { project: string | null }): Promise<void> => {
       setActiveAccount(id); // optimistic
-      gateway
+      return gateway
 .req<{ active: string }>("claude.set_account", { account: id })
-.then((r) => setActiveAccount(r.active))
+.then((r) => {
+          setActiveAccount(r.active);
+          // A running terminal only reads the token at launch, so switching account there means
+          // relaunching: hard-end the session (after the new account is persisted), then bump the
+          // nonce to remount TerminalView, whose reopen runs `claude -c` on the new account, same
+          // conversation. Bubble mode needs nothing: its next turn spawns with the new token.
+          if (refresh) {
+            return gateway
+.req("terminal.kill", { project: refresh.project })
+.catch(() => {})
+.then(() => setTerminalNonce((n) => n + 1));
+          }
+        })
 .catch(() => {});
     },
     [gateway],
@@ -295,6 +310,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         accounts,
         activeAccount,
         setAccount,
+        terminalNonce,
         model,
         setModel,
         activeSessions,

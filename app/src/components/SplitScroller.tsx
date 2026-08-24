@@ -27,6 +27,7 @@ import { TerminalView } from "./TerminalView";
 import { EmptyPanel } from "./EmptyPanel";
 import { ScrollRail } from "./ScrollRail";
 import { MAX_PANELS, type Cell } from "../lib/splitCells";
+import { useGateway } from "../lib/useGateway";
 
 /** How long a panel stays attached after scrolling out of view. */
 const GRACE_MS = 20_000;
@@ -65,6 +66,8 @@ export function SplitScroller({
   onAdd: () => void;
   onDropProject: (id: number, project: string) => void;
 }) {
+  // A bumped nonce (e.g. account switch) forces every terminal to remount and relaunch.
+  const { terminalNonce } = useGateway();
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodes = useRef(new Map<number, HTMLElement>());
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
@@ -208,7 +211,7 @@ export function SplitScroller({
                 {cell.project === undefined ? (
                   <EmptyPanel focused={focused} />
                 ): live ? (
-                  <TerminalView key={cell.project ?? "master"} project={cell.project} autoFocus={focused} />
+                  <TerminalView key={`${cell.project ?? "master"}:${terminalNonce}`} project={cell.project} autoFocus={focused} />
                 ): (
                   <div className="grid h-full place-items-center rounded-xl border border-dashed border-line px-3 text-center text-xs text-faint">
                     Scrolled away: reattaches when you come back

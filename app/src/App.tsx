@@ -843,6 +843,8 @@ function UsageBadge({ project, mode }: { project: string | null; mode: Mode }) {
         <UsagePanel
           result={usage}
           tokens={tokens}
+          project={project}
+          mode={mode}
           onClose={() => setOpen(false)}
           onRefresh={() => {
             setUsage(null);
@@ -983,14 +985,56 @@ function MachineSection() {
   );
 }
 
+/**
+ * Account switch, in the usage panel because a plan's quota and which account you are on are the
+ * same question. In terminal mode the switch relaunches the pane's `claude -c` on the new token
+ * (see setAccount); in bubble mode the next turn just picks it up. Hidden with one account.
+ */
+function AccountSwitch({ project, mode, onRefresh }: { project: string | null; mode: Mode; onRefresh: () => void }) {
+  const { accounts, activeAccount, setAccount } = useGateway();
+  if (accounts.length <= 1) return null;
+  const inTerminal = mode === "terminal" && project !== null;
+  const pick = (id: string) => {
+    if (id === activeAccount) return;
+    // Refresh the usage read once the switch has persisted, so the bars follow it immediately
+    // instead of waiting for the next poll (the numbers are per-account, server-side).
+    void setAccount(id, inTerminal ? { project }: undefined).then(onRefresh);
+  };
+  return (
+    <div className="mb-2">
+      <div className="flex gap-0.5 rounded-lg border border-line bg-bg p-0.5">
+        {accounts.map((a) => (
+          <button
+            key={a}
+            onClick={() => pick(a)}
+            aria-pressed={a === activeAccount}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              a === activeAccount ? "bg-accent text-bg": "text-muted hover:text-ink"
+            }`}
+          >
+            {a.charAt(0).toUpperCase() + a.slice(1)}
+          </button>
+        ))}
+      </div>
+      {inTerminal && (
+        <p className="mt-1 text-[10px] text-faint">Reloads this terminal on the new account.</p>
+      )}
+    </div>
+  );
+}
+
 function UsagePanel({
   result,
   tokens,
+  project,
+  mode,
   onClose,
   onRefresh,
 }: {
   result: UsageResult;
   tokens: number | null;
+  project: string | null;
+  mode: Mode;
   onClose: () => void;
   onRefresh: () => void;
 }) {
@@ -1036,6 +1080,7 @@ function UsagePanel({
             <X size={13} weight="bold" />
           </button>
         </div>
+        <AccountSwitch project={project} mode={mode} onRefresh={onRefresh} />
         {result.ok ? (
           <>
             <Window label="Session" pct={session} level={level} reset={fmtReset(u.session_resets_at)} />

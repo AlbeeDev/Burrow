@@ -28,6 +28,8 @@ export function shQuote(parts: string[]): string {
 export const PRESERVE = [
   "CLAUDE_CODE_OAUTH_TOKEN",
   "ANTHROPIC_API_KEY",
+  // Which account the usage provider should read for; dropped by the login otherwise.
+  "BURROW_USAGE_ACCOUNT",
   // Claude's config/history location, when moved off the default.
   "CLAUDE_CONFIG_DIR",
   // Claude Code refuses bypassPermissions as root unless the environment is marked a sandbox.

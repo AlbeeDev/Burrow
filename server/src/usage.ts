@@ -32,6 +32,11 @@ export type Usage = {
   // null, not absent, when the account has no limit set, the live script really sends that.
   credits_spent?: number | null;
   credits_limit?: number | null;
+  // The account id the provider read for, echoed back from what Burrow sent (null when none sent).
+  // Burrow asserts this matches its request, a mismatch means the switch did not take on their side.
+  account?: string | null;
+  // Which Claude org the numbers are for; provider-side attribution, unused by Burrow so far.
+  org_uuid?: string;
 };
 
 /** What the gateway hands the client. `ok: false` means show "unknown", never a number. */
@@ -166,8 +171,10 @@ export async function usageProvider(): Promise<Provider | null> {
   return isWSL() ? windowsProvider(): null;
 }
 
-let cache: UsageResult | null = null;
-let inflight: Promise<UsageResult> | null = null;
+// Cached PER ACCOUNT: different accounts return different numbers, so a global cache would serve the
+// previous account's figures for a whole TTL after a switch. Keyed by the id sent ("" when none).
+const cache = new Map<string, UsageResult>();
+const inflight = new Map<string, Promise<UsageResult>>();
 
 function parse(stdout: string): Usage | null {
   try {
@@ -181,14 +188,24 @@ function parse(stdout: string): Usage | null {
   return null;
 }
 
-function run(found: Provider): Promise<UsageResult> {
+function run(found: Provider, account?: string): Promise<UsageResult> {
   const { file, args } = usageCommand(found);
+  // The active account rides along on every read (the provider keys a stored session by it); absent
+  // it falls back to whatever the browser is logged into, exactly the old behaviour.
+  const env = account ? {...process.env, BURROW_USAGE_ACCOUNT: account }: process.env;
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: TIMEOUT, maxBuffer: 1 << 20, cwd: found.cwd }, (err, stdout) => {
+    execFile(file, args, { timeout: TIMEOUT, maxBuffer: 1 << 20, cwd: found.cwd, env }, (err, stdout) => {
       const usage = parse(String(stdout ?? ""));
       // Exit 1 still prints JSON with a failure status, and that status is more informative than
       // anything we could invent, so it wins over the exit code.
       if (usage) {
+        // The provider echoes the id it read for. If we asked for one and got a different one back,
+        // the session swap did not take on their side: render unknown rather than a plausible wrong
+        // number for the other account (their contract asks us to assert this).
+        if (account && usage.account != null && usage.account !== account) {
+          resolve({ ok: false, usage: { status: "request_failed" }, at: Date.now(), cached: false });
+          return;
+        }
         resolve({ ok: usage.status === "ok", usage, at: Date.now(), cached: false });
         return;
       }
@@ -206,7 +223,7 @@ function run(found: Provider): Promise<UsageResult> {
  * Current usage, cached. Concurrent callers share one run, with several browser tabs open this is
  * the difference between one cookie copy and five.
  */
-export async function readUsage(): Promise<UsageResult> {
+export async function readUsage(account?: string): Promise<UsageResult> {
   /*
    * No provider installed is a DIFFERENT state from a provider that failed, and collapsing them
    * was the old behaviour: everybody without the private sibling project got a permanent "usage
@@ -218,23 +235,27 @@ export async function readUsage(): Promise<UsageResult> {
   if (!found) {
     return { ok: false, usage: { status: "not_configured" }, at: Date.now(), cached: false, provider: null };
   }
-  const ttl = cache?.ok ? OK_TTL: FAIL_TTL;
-  if (cache && Date.now() - cache.at < ttl) return {...cache, cached: true, provider: found.display };
-  if (inflight) return inflight;
-  inflight = run(found)
+  const key = account ?? "";
+  const hit = cache.get(key);
+  const ttl = hit?.ok ? OK_TTL: FAIL_TTL;
+  if (hit && Date.now() - hit.at < ttl) return {...hit, cached: true, provider: found.display };
+  const pending = inflight.get(key);
+  if (pending) return pending;
+  const started = run(found, account)
 .then((r) => ({...r, provider: found.display }))
 .then((r) => {
-      cache = r;
+      cache.set(key, r);
       return r;
     })
 .finally(() => {
-      inflight = null;
+      inflight.delete(key);
     });
-  return inflight;
+  inflight.set(key, started);
+  return started;
 }
 
 /** Test seam: drop the cache so a stub change is picked up immediately. */
 export function resetUsageCache(): void {
-  cache = null;
-  inflight = null;
+  cache.clear();
+  inflight.clear();
 }

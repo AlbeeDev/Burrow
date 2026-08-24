@@ -247,6 +247,18 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
   }
   setInterval(() => void tickSchedule(), 30_000);
 
+  // The usage provider keys its stored sessions by opaque ids (see BURROW-RESPONSE-account-switch in
+  // the provider repo). Burrow maps its active account to one by POSITION in `ids()`, which is sorted
+  // alphabetically: the alphabetically-first account -> the provider's first id, and so on. Names are
+  // irrelevant, only that order has to line up with how the sessions were captured. One account (or
+  // an unmapped position) sends nothing, so the provider falls back to the browser's own login.
+  const USAGE_PROVIDER_IDS = ["primary", "secondary"];
+  function usageAccountId(): string | undefined {
+    const ids = accounts.ids();
+    if (ids.length <= 1) return undefined;
+    return USAGE_PROVIDER_IDS[ids.indexOf(accounts.activeId())];
+  }
+
   // Resolve a project name (or null = master) to a working directory under the root.
   async function resolveCwd(project: string | null): Promise<string | null> {
     if (!project) return opts.projectsRoot;
@@ -818,8 +830,9 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
         case Method.UsageGet: {
           // Cached inside readUsage (README: don't poll per render). A failed read answers ok
           // with `ok: false` rather than an error frame, "usage unknown" is a normal state the
-          // header has to render, not a request failure.
-          ok(await readUsage());
+          // header has to render, not a request failure. The active account rides along so the
+          // numbers follow the switch (see usageAccountId).
+          ok(await readUsage(usageAccountId()));
           return;
         }
 

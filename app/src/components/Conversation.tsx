@@ -1,4 +1,5 @@
 import type { Mode } from "../App";
+import { useGateway } from "../lib/useGateway";
 import { TerminalView } from "./TerminalView";
 import { ClaudeView } from "./ClaudeView";
 
@@ -6,12 +7,14 @@ export function Conversation({ project, mode }: { project: string | null; mode: 
   // Terminal remounts per project (fresh xterm); Claude persists its conversation
   // across project/mode switches, so it is always mounted and toggled with CSS.
   const projectKey = project ?? "master";
+  // A bumped nonce (e.g. account switch) forces the terminal to remount and relaunch.
+  const { terminalNonce } = useGateway();
   return (
     <div className="min-h-0 flex-1 p-3 md:p-4">
       {/* Terminal mounts only while shown (xterm needs a real size to fit). */}
       {mode === "terminal" && (
         <div className="h-full">
-          <TerminalView key={projectKey} project={project} />
+          <TerminalView key={`${projectKey}:${terminalNonce}`} project={project} />
         </div>
       )}
       {/* Claude stays mounted and hidden so its conversation survives a mode toggle;
