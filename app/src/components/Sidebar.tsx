@@ -26,8 +26,9 @@ import { CreateModal } from "./CreateModal";
 import { Hint } from "./Hint";
 import { TOUR_RESET_EVENT } from "../lib/tour";
 
-// Selection is either everything, one group, or the ungrouped bucket.
-type Sel = { kind: "all" } | { kind: "group"; name: string } | { kind: "ungrouped" };
+// Selection is either everything or one group. Projects with no group are "parked" (see the
+// group manager's Parked tray): out of the sidebar entirely, not a bucket you can select here.
+type Sel = { kind: "all" } | { kind: "group"; name: string };
 
 // Display label for saved split layouts. Code calls them splits everywhere; only this string is
 // the branding, so renaming it is a one-line change, which it was: they were
@@ -135,14 +136,12 @@ export function Sidebar({
     return g && groups.includes(g);
   };
 
-  const hasUngrouped = useMemo(() => projects.some((p) => !isGrouped(p)), [projects, assignments, groups]);
-
-  // Projects for the current rail selection, then narrowed by the search box.
+  // Projects for the current rail selection, then narrowed by the search box. Parked (ungrouped)
+  // projects never appear in the sidebar: "All projects" means all GROUPED projects.
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return projects.filter((p) => {
-      if (sel.kind === "group" && assignments[p.name] !== sel.name) return false;
-      if (sel.kind === "ungrouped" && isGrouped(p)) return false;
+      if (sel.kind === "all" ? !isGrouped(p): assignments[p.name] !== sel.name) return false;
       if (q && !p.name.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -162,8 +161,7 @@ export function Sidebar({
     return m;
   }, [projects, groups, assignments, activeSessions]);
 
-  const title =
-    sel.kind === "all" ? "All projects": sel.kind === "ungrouped" ? "Ungrouped": sel.name;
+  const title = sel.kind === "all" ? "All projects": sel.name;
   const titleGroup = sel.kind === "group" ? sel.name: null;
 
   // Skipping a tour step closes whatever that step had opened. An event rather than a prop
@@ -319,17 +317,6 @@ export function Sidebar({
               </RailChip>
             );
           })}
-
-          {hasUngrouped && (
-            <RailChip
-              label="Ungrouped"
-              active={sel.kind === "ungrouped"}
-              onClick={() => setSel({ kind: "ungrouped" })}
-              onDropProject={(proj) => assignProject(proj, null)}
-            >
-              <Folder size={17} weight={sel.kind === "ungrouped" ? "fill": "regular"} />
-            </RailChip>
-          )}
 
           <button
             data-tour="new-group"

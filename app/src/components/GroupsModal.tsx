@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
-import { X, Plus, DotsThreeVertical, PencilSimple, Trash, Palette } from "@phosphor-icons/react";
+import { X, Plus, DotsThreeVertical, PencilSimple, Trash, Palette, EyeSlash } from "@phosphor-icons/react";
 import { useGateway } from "../lib/useGateway";
 import type { Project } from "../lib/gateway";
 
 // Swatches for the group color picker (custom hex also available via the color input).
+// Red (#e5604d) is intentionally absent: it is reserved for the Parked (Ignore) tray, so a normal
+// group can't wear the "ignored" colour.
 const PALETTE = [
-  "#f2792b", "#e0a94b", "#c9702b", "#d0644f", "#8fae5f", "#5fb8ad",
-  "#c98bd0", "#b5814f", "#e5604d", "#6ea9d6", "#7fd89a", "#ffc76b",
+  "#f2792b", "#e0a94b", "#c9702b", "#8fae5f", "#5fb8ad", "#c98bd0",
+  "#b5814f", "#6ea9d6", "#7fd89a", "#ffc76b",
 ];
 
 /**
- * Groups board: one colored lane per group plus an "Ungrouped" lane. Drag chats between
- * lanes (or tap to move), rename/recolor/delete a group inline, and delete a project (soft
+ * Groups board: one colored lane per group, with a red "Parked (Ignore)" tray across the bottom
+ * for projects with no group (hidden from the sidebar). Drag chats between lanes or down into the
+ * tray (or tap to move), rename/recolor/delete a group inline, and delete a project (soft
  *: moves to trash). Every action persists immediately. The board scrolls horizontally with
  * the wheel. Groups are labels only; project delete moves the real folder to ~/.burrow/trash.
  */
@@ -153,25 +156,100 @@ export function GroupsModal({ onClose }: { onClose: () => void }) {
               onDeleteProject={deleteProject}
             />
           ))}
-          <Lane
-            name="Ungrouped"
-            color={null}
-            members={membersOf(null)}
-            groups={groups}
-            activeSessions={activeSessions}
-            onDropProject={(proj) => assignProject(proj, null)}
-            onMove={(proj, to) => assignProject(proj, to)}
-            onDeleteProject={deleteProject}
-          />
           {groups.length === 0 && (
             <div className="grid flex-1 place-items-center px-6 text-center text-sm text-faint">
               Add a group above, then drag chats into it.
             </div>
           )}
         </div>
+
+        {/* Parked tray: a project with no group. Laid out horizontally, below the vertical group
+            lanes, so it reads as a different kind of thing, not another group. Dragging a project
+            down here drops its group; it then disappears from the sidebar (see Sidebar's Sel). */}
+        <ParkedTray
+          members={membersOf(null)}
+          groups={groups}
+          activeSessions={activeSessions}
+          onPark={(proj) => assignProject(proj, null)}
+          onMove={(proj, to) => assignProject(proj, to)}
+          onDeleteProject={deleteProject}
+        />
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * The parked (ignored) projects: no group, hidden from the sidebar, reachable only here. A wide
+ * bottom tray rather than a lane, so its role reads as "set aside" instead of "another column".
+ */
+function ParkedTray({
+  members,
+  groups,
+  activeSessions,
+  onPark,
+  onMove,
+  onDeleteProject,
+}: {
+  members: Project[];
+  groups: string[];
+  activeSessions: Set<string>;
+  onPark: (project: string) => void;
+  onMove: (project: string, to: string | null) => void;
+  onDeleteProject: (name: string) => Promise<void>;
+}) {
+  const [over, setOver] = useState(false);
+  return (
+    <div
+      onDragOver={(e: DragEvent) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e: DragEvent) => {
+        e.preventDefault();
+        setOver(false);
+        const proj = e.dataTransfer.getData("text/plain");
+        if (proj) onPark(proj);
+      }}
+      className={`shrink-0 border-t px-4 py-3 transition-colors ${
+        over ? "border-danger bg-danger/10": "border-line"
+      }`}
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <EyeSlash size={15} className="text-danger" />
+        <span className="text-sm font-semibold text-danger">Parked (Ignore)</span>
+        <span className="text-xs text-faint">{members.length}</span>
+        <span className="ml-auto text-[11px] text-faint">hidden from the sidebar</span>
+      </div>
+      <div
+        className="flex min-h-28 gap-2 overflow-x-auto rounded-lg border border-dashed border-danger/50 bg-danger/5 p-2"
+        onWheel={(e) => {
+          e.currentTarget.scrollLeft += e.deltaY;
+        }}
+      >
+        {members.length === 0 ? (
+          <p className="grid w-full place-items-center px-2 text-center text-xs text-danger/70">
+            Drag a project here to hide it from the sidebar.
+          </p>
+        ): (
+          members.map((p) => (
+            <div key={p.name} className="w-48 shrink-0">
+              <Chip
+                project={p.name}
+                color={null}
+                live={activeSessions.has(p.name)}
+                // Only groups: moving a parked project means un-parking it into one.
+                targets={groups}
+                onMove={(to) => onMove(p.name, to)}
+                onDeleteProject={onDeleteProject}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -395,7 +473,7 @@ function Chip({
                 {t !== "__ungrouped__" && (
                   <span className="size-2 rounded-full" style={{ backgroundColor: colorOf(t) }} />
                 )}
-                <span className="truncate">{t === "__ungrouped__" ? "Ungrouped": t}</span>
+                <span className="truncate">{t === "__ungrouped__" ? "Parked (Ignore)": t}</span>
               </button>
             ))}
             <button
