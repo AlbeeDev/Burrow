@@ -812,7 +812,7 @@ function UsageBadge({ project, mode }: { project: string | null; mode: Mode }) {
           ? "border-line text-faint": "border-line text-muted";
 
   return (
-    <span className="relative hidden sm:inline-flex">
+    <span className="relative inline-flex">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
