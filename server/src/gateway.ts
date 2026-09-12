@@ -493,6 +493,12 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
                 });
               }
             }
+            // New projects start with third-party MCP servers OFF: user-scope servers otherwise
+            // leak into every project, active, whether or not it wants them. Burrow's own server
+            // stays on (it's the screen/media feature). Turn the rest back on per project in the
+            // MCP panel. Written before the session is ever launched, so its first spawn is clean.
+            const newCwd = await resolveCwd(project.name);
+            if (newCwd) mcp.setDisabled(newCwd, mcp.servers(newCwd).filter((s) => s !== "burrow"));
             audit("project_create", { name: project.name });
             ok({ project });
           } catch (err) {
