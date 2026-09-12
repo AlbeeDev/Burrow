@@ -46,7 +46,6 @@ const WIDTH_KEY = "burrow.sidebarWidth";
 // to a project reopens where you left off. A project you've never toggled defaults to terminal;
 // there's no global carry-over (switching sandbox to bubble must not flip burrow to bubble).
 const MODE_KEY = (p: string | null) => `burrow.mode:${p ?? "master"}`;
-const LAST_PROJECT_KEY = "burrow.project";
 
 function loadMode(p: string | null): Mode {
   return localStorage.getItem(MODE_KEY(p)) === "claude" ? "claude": "terminal";
@@ -61,10 +60,14 @@ function fmtK(n: number): string {
 }
 
 export function App() {
-  // null project = the master terminal (root of the VPS). Restore the last project + its view
-  // so a reload/return lands where you left off.
-  const [project, setProject] = useState<string | null>(() => localStorage.getItem(LAST_PROJECT_KEY) || null);
-  const [mode, setMode] = useState<Mode>(() => loadMode(localStorage.getItem(LAST_PROJECT_KEY) || null));
+  // null project = the master terminal (root of the VPS). A fresh load starts with NOTHING
+  // selected (see `selected` below): Burrow no longer reopens the last project or boots a session
+  // on entry, you land on a panel and pick one. `project`/`mode` are just defaults until you do.
+  const [project, setProject] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>(() => loadMode(null));
+  // Has the user picked a project (or master) yet this load? Until they do, the main area shows a
+  // landing panel and no terminal mounts, so opening Burrow never auto-starts a Claude.
+  const [selected, setSelected] = useState(false);
   const [pendingMode, setPendingMode] = useState<Mode | null>(null); // a switch awaiting confirmation
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
@@ -174,24 +177,6 @@ export function App() {
   const activeName = project ?? "master";
   const activeDesc = project ? (projects.find((p) => p.name === project)?.description ?? null): null;
 
-  // Persist the active project across reloads; drop a restored name that no longer exists.
-  useEffect(() => {
-    if (project) localStorage.setItem(LAST_PROJECT_KEY, project);
-    else localStorage.removeItem(LAST_PROJECT_KEY);
-  }, [project]);
-  // Validate the restored project only ONCE, when the list first loads, otherwise this fires
-  // during the brief window after creating a project (before refresh lands it in `projects`)
-  // and bounces you back to root.
-  const validated = useRef(false);
-  useEffect(() => {
-    if (validated.current || !projects.length) return;
-    validated.current = true;
-    if (project && !projects.some((p) => p.name === project)) {
-      setProject(null);
-      setMode(loadMode(null));
-    }
-  }, [projects, project]);
-
   // Split-view geometry. `splitOn` gates every split behaviour on one condition, so a window
   // shrink or a mode switch can never leave half-applied split state behind.
   const splitOn = mode === "terminal" && isDesktop && !!splitState;
@@ -201,7 +186,7 @@ export function App() {
   // ones scrolled out of view: an empty panel (`project === undefined`) holds nothing. Bubble mode
   // holds nothing either: it ends its terminal outright rather than draining it.
   useSessionHolds(
-    mode !== "terminal"
+    !selected || mode !== "terminal"
       ? []: splitOn
         ? splitState!.cells
 .filter((c) => c.project !== undefined)
@@ -228,6 +213,7 @@ export function App() {
 
   // "+" in the sidebar: a new saved split, opened immediately, holding the current project.
   function newSplit() {
+    setSelected(true);
     const used = new Set(splits.map((s) => s.name));
     let n = splits.length + 1;
     while (used.has(`Split ${n}`)) n++;
@@ -242,6 +228,7 @@ export function App() {
   function openSavedSplit(id: string) {
     const entry = splits.find((s) => s.id === id);
     if (!entry) return;
+    setSelected(true);
     setActiveSplitId(id);
     if (mode !== "terminal") enterTerminalMode();
     const state = fromSaved(entry.panels);
@@ -269,6 +256,7 @@ export function App() {
   }
 
   function selectProject(next: string | null) {
+    setSelected(true); // first pick leaves the landing panel
     // In split view the sidebar fills the FOCUSED panel, the other panels stay put.
     if (splitOn) {
       applySplit(assignToFocused(splitState!, next));
@@ -434,7 +422,7 @@ export function App() {
               two marks are what make "this header describes that panel" read instantly. */}
           <div className={`min-w-0 flex-1 ${splitOn ? "border-l-2 border-accent pl-2.5": ""}`}>
             <h1 className="truncate font-mono text-[15px] font-semibold text-ink">
-              {emptyFocus ? "Empty panel": activeName}
+              {!selected ? "No project": emptyFocus ? "Empty panel": activeName}
             </h1>
             {emptyFocus ? (
               <p className="truncate text-xs text-muted">Pick a project in the sidebar to open it here</p>
@@ -484,13 +472,24 @@ export function App() {
             {mode === "terminal" && project !== null && !emptyFocus && <PersistToggle project={project} />}
             {mode === "claude" && <ModelToggle />}
             {mode === "claude" && <AccountToggle />}
-            <ModeToggle mode={mode} onChange={(m) => m !== mode && setPendingMode(m)} />
+            {selected && <ModeToggle mode={mode} onChange={(m) => m !== mode && setPendingMode(m)} />}
           </div>
         </div>
         {!emptyFocus && <PushRow feed={pushFeed} />}
         </header>
 
-        {splitOn ? (
+        {!selected ? (
+          // Fresh load: nothing is open and no session is running. Pick a project to begin.
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
+            <div className="max-w-xs">
+              <img src="/burrow-logo.svg" alt="" className="mx-auto mb-3 size-10 opacity-80" />
+              <p className="text-sm font-medium text-muted">No project open</p>
+              <p className="mt-1 text-xs text-faint">
+                Pick a project from the sidebar to start a session. Nothing runs until you do.
+              </p>
+            </div>
+          </div>
+        ): splitOn ? (
           <div data-tour="terminal" className="min-h-0 flex-1 p-3 md:p-4">
             {/*
               Every panel is a column: full height, scroll sideways for the rest. There is no
