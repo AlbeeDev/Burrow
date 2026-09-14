@@ -74,6 +74,7 @@ export const Method = {
   TailscaleState: "tailscale.state",
   TailscaleServe: "tailscale.serve",
   ClaudeAccounts: "claude.accounts",
+  ClaudeAccountPlans: "claude.account_plans",
   ClaudeSetAccount: "claude.set_account",
   CommandsList: "commands.list",
   McpList: "mcp.list",

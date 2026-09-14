@@ -604,7 +604,7 @@ function ModelToggle() {
 }
 
 function AccountToggle() {
-  const { accounts, activeAccount, setAccount } = useGateway();
+  const { accounts, accountLabels, activeAccount, setAccount } = useGateway();
   if (accounts.length <= 1) return null;
   return (
     <select
@@ -613,9 +613,9 @@ function AccountToggle() {
       title="Claude account"
       className="rounded-full border border-line bg-bg px-3 py-1 text-xs font-medium text-muted focus:border-accent focus:text-ink focus:outline-none"
     >
-      {accounts.map((a) => (
+      {accounts.map((a, i) => (
         <option key={a} value={a}>
-          {a.charAt(0).toUpperCase() + a.slice(1)}
+          {accountLabels[i] ?? a}
         </option>
       ))}
     </select>
@@ -990,7 +990,7 @@ function MachineSection() {
  * (see setAccount); in bubble mode the next turn just picks it up. Hidden with one account.
  */
 function AccountSwitch({ project, mode, onRefresh }: { project: string | null; mode: Mode; onRefresh: () => void }) {
-  const { accounts, activeAccount, setAccount } = useGateway();
+  const { accounts, accountLabels, activeAccount, setAccount } = useGateway();
   if (accounts.length <= 1) return null;
   const inTerminal = mode === "terminal" && project !== null;
   const pick = (id: string) => {
@@ -1002,7 +1002,7 @@ function AccountSwitch({ project, mode, onRefresh }: { project: string | null; m
   return (
     <div className="mb-2">
       <div className="flex gap-0.5 rounded-lg border border-line bg-bg p-0.5">
-        {accounts.map((a) => (
+        {accounts.map((a, i) => (
           <button
             key={a}
             onClick={() => pick(a)}
@@ -1011,7 +1011,7 @@ function AccountSwitch({ project, mode, onRefresh }: { project: string | null; m
               a === activeAccount ? "bg-accent text-bg": "text-muted hover:text-ink"
             }`}
           >
-            {a.charAt(0).toUpperCase() + a.slice(1)}
+            {accountLabels[i] ?? a}
           </button>
         ))}
       </div>

@@ -31,7 +31,7 @@ import { readSchedules, writeSchedules, normalizeRows, dueRows, fmtToday, keptCh
 import { readSplits, writeSplits } from "./splits.js";
 import { listCommands, mergeKnown } from "./commands.js";
 import { claudeLaunchCommand } from "./launch.js";
-import { readUsage } from "./usage.js";
+import { readUsage, readAccountPlans } from "./usage.js";
 import { readHistory, latestContextTokens, searchHistory } from "./history.js";
 import { ensureTrusted } from "./trust.js";
 import { AccountManager } from "./accounts.js";
@@ -839,6 +839,13 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
           // header has to render, not a request failure. The active account rides along so the
           // numbers follow the switch (see usageAccountId).
           ok(await readUsage(usageAccountId()));
+          return;
+        }
+
+        case Method.ClaudeAccountPlans: {
+          // Every account's plan in one provider call, for labelling the switcher. Cached; safe to
+          // call on load. Failure is a normal state (rows carry their own status).
+          ok(await readAccountPlans());
           return;
         }
 

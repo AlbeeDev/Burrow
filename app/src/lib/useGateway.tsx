@@ -3,12 +3,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { Gateway, gatewayUrl, type ConnStatus, type Project, type Schedule, type SavedSplit } from "./gateway";
 import { groupColor } from "./groups";
+import { planLabel } from "./usage";
 import type { SessionStat } from "./sessionStats";
 
 /** project name -> group label. Absent = ungrouped. */
@@ -21,6 +23,8 @@ type GatewayContextValue = {
   groups: string[];
   assignments: Assignments;
   accounts: string[];
+  /** Display label per account, aligned to `accounts`: real plan name, else capitalised id. */
+  accountLabels: string[];
   activeAccount: string;
   setAccount: (id: string, refresh?: { project: string | null }) => Promise<void>;
   /** Bumped to force a terminal remount, e.g. after an account switch relaunches `claude -c`. */
@@ -74,7 +78,21 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   const [onboarding, setOnboarding] = useState<{ tourDone: boolean; hintsSeen: Set<string> } | null>(null);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [activeAccount, setActiveAccount] = useState<string>("");
+  const [accountPlans, setAccountPlans] = useState<{ account: string; status: string; plan?: string | null }[]>([]);
   const [terminalNonce, setTerminalNonce] = useState(0);
+
+  // Switcher chip labels: each account's real plan from the provider ("Claude Max 5x"), falling
+  // back to the capitalised account id when that account has no readable plan. Aligned to `accounts`
+  // by id, then by position (the provider may key rows differently than the bashrc ids).
+  const accountLabels = useMemo(
+    () =>
+      accounts.map((id, i) => {
+        const row = accountPlans.find((r) => r.account === id) ?? accountPlans[i];
+        const label = row && row.status === "ok" ? planLabel(row.plan): null;
+        return label ?? (id ? id[0]!.toUpperCase() + id.slice(1): id);
+      }),
+    [accounts, accountPlans],
+  );
   const [model, setModelState] = useState<string>(() => localStorage.getItem("burrow.model") ?? "");
 
   const [activeSessions, setActiveSessions] = useState<Set<string>>(new Set());
@@ -115,6 +133,12 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         setAccounts(r.accounts ?? []);
         setActiveAccount(r.active ?? "");
       })
+.catch(() => {});
+    // Plans come from a separate (slower, browser-backed) call, so the switcher shows fallback
+    // labels immediately and upgrades to real plan names when this lands.
+    gateway
+.req<{ accounts: { account: string; status: string; plan?: string | null }[] }>("claude.account_plans")
+.then((r) => setAccountPlans(r.accounts ?? []))
 .catch(() => {});
     gateway
 .req<{ schedules: Schedule[] }>("schedule.get")
@@ -308,6 +332,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         groups,
         assignments,
         accounts,
+        accountLabels,
         activeAccount,
         setAccount,
         terminalNonce,

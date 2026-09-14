@@ -37,6 +37,8 @@ export type Usage = {
   account?: string | null;
   // Which Claude org the numbers are for; provider-side attribution, unused by Burrow so far.
   org_uuid?: string;
+  // The account's plan as an opaque string (e.g. "claude_max 5x"); null/absent when unavailable.
+  plan?: string | null;
 };
 
 /** What the gateway hands the client. `ok: false` means show "unknown", never a number. */
@@ -258,4 +260,65 @@ export async function readUsage(account?: string): Promise<UsageResult> {
 export function resetUsageCache(): void {
   cache.clear();
   inflight.clear();
+  plansCache = null;
+  plansInflight = null;
+}
+
+/** One configured account and the plan it is on, as `claude-usage --plans` reports it. */
+export type AccountPlan = { account: string; status: string; plan?: string | null };
+
+/** The `--plans` answer: every configured account in one call, each with its own status. */
+export type PlansResult = { ok: boolean; status: string; accounts: AccountPlan[]; at: number; cached: boolean };
+
+let plansCache: PlansResult | null = null;
+let plansInflight: Promise<PlansResult> | null = null;
+
+function parsePlans(stdout: string): { status: string; accounts: AccountPlan[] } | null {
+  try {
+    const p = JSON.parse(stdout);
+    if (p && typeof p === "object" && typeof p.status === "string" && Array.isArray(p.accounts)) {
+      const accounts = p.accounts
+.filter((a: unknown): a is Record<string, unknown> => !!a && typeof a === "object")
+.map((a: Record<string, unknown>) => ({
+          account: String(a.account ?? ""),
+          status: typeof a.status === "string" ? a.status: "unreadable",
+          plan: typeof a.plan === "string" ? a.plan: null,
+        }));
+      return { status: p.status, accounts };
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
+/**
+ * Every account's plan in ONE provider call (`--plans`): one browser connection for all of them,
+ * cached 60s. Preferred over one `--account` read per account (the provider serialises those behind
+ * a lock anyway). Each row carries its own status; a failed row simply has no plan. Cached
+ * separately from the usage read.
+ */
+export async function readAccountPlans(): Promise<PlansResult> {
+  const found = await usageProvider();
+  if (!found) return { ok: false, status: "not_configured", accounts: [], at: Date.now(), cached: false };
+  if (plansCache && Date.now() - plansCache.at < OK_TTL) return {...plansCache, cached: true };
+  if (plansInflight) return plansInflight;
+  const { file, args } = usageCommand({...found, args: [...found.args, "--plans"] });
+  plansInflight = new Promise<PlansResult>((resolve) => {
+    execFile(file, args, { timeout: TIMEOUT, maxBuffer: 1 << 20, cwd: found.cwd }, (err, stdout) => {
+      const parsed = parsePlans(String(stdout ?? ""));
+      resolve(
+        parsed
+          ? { ok: parsed.status === "ok", status: parsed.status, accounts: parsed.accounts, at: Date.now(), cached: false }: { ok: false, status: err ? "request_failed": "unreadable", accounts: [], at: Date.now(), cached: false },
+      );
+    });
+  })
+.then((r) => {
+      plansCache = r;
+      return r;
+    })
+.finally(() => {
+      plansInflight = null;
+    });
+  return plansInflight;
 }

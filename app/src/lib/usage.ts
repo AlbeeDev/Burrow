@@ -20,9 +20,28 @@ export type Usage = {
   // null, not absent, when the account has no limit set, the live script really sends that.
   credits_spent?: number | null;
   credits_limit?: number | null;
+  // The account's plan as an opaque string (e.g. "claude_max 5x"); null/absent when unavailable.
+  // Passed through untouched, never parsed for a tier (see USAGE-PROVIDER-plan-field.md).
+  plan?: string | null;
 };
 
 export type UsageResult = { ok: boolean; usage: Usage; at: number; cached: boolean; provider?: string | null };
+
+/**
+ * Display form of the opaque `plan` string: underscores to spaces, alphabetic words capitalised
+ * ("claude_max 5x" -> "Claude Max 5x"). Purely cosmetic and value-agnostic: it never parses a tier
+ * or assumes a fixed set, so an unknown plan still renders sensibly. Null when there's nothing.
+ */
+export function planLabel(plan?: string | null): string | null {
+  if (typeof plan !== "string") return null;
+  const t = plan.trim();
+  if (!t) return null;
+  return t
+.replace(/_/g, " ")
+.split(/\s+/)
+.map((w) => (/^[a-z]/.test(w) ? w[0]!.toUpperCase() + w.slice(1): w))
+.join(" ");
+}
 
 /** The percentage the bar should show, or null when there is nothing trustworthy to show. */
 export function sessionPct(r: UsageResult | null): number | null {
