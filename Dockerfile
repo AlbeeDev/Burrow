@@ -7,7 +7,7 @@
 FROM node:22-bookworm-slim AS web
 WORKDIR /build
 COPY app/package*.json app/
-RUN cd app && npm install
+RUN cd app && npm ci
 COPY app app/
 # Vite outDir is ../server/web, so the build lands in /build/server/web.
 RUN cd app && npm run build
@@ -24,7 +24,7 @@ RUN apt-get update \
 RUN npm install -g @anthropic-ai/claude-code@2.1.177
 WORKDIR /app
 COPY server/package*.json ./
-RUN npm install
+RUN npm ci
 COPY server/ ./
 COPY --from=web /build/server/web ./web
 EXPOSE 8317
