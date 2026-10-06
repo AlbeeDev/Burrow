@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Copy, ClipboardText } from "@phosphor-icons/react";
+import { Copy, ClipboardText, Microphone } from "@phosphor-icons/react";
 import { useGateway } from "../lib/useGateway";
 import { FONT_EVENT, termFontSize } from "../lib/termFont";
 import { panelFocusRequest, splitToggleRequest } from "../lib/shortcuts";
+import { startVoiceStream } from "../lib/voiceStream";
 
 // Warm-dark terminal theme that matches the app's ember identity.
 const THEME = {
@@ -32,6 +33,12 @@ const THEME = {
   brightWhite: "#ffffff",
 } as const;
 
+// Voice-command wake word + its valid verbs. "command" is deliberately a common word; it only
+// triggers when IMMEDIATELY followed by one of these verbs, so "run this command now" stays literal
+// text while "command send" fires. Change the wake word in one place.
+const WAKE = "command";
+const COMMANDS = new Set(["start", "clear", "send", "stop", "escape", "interrupt", "up", "down"]);
+
 /**
  * `autoFocus`: should this terminal take the keyboard on mount? True for the single view. In a
  * split it must be true only for the FOCUSED panel: every panel calling `term.focus()` as it
@@ -54,6 +61,27 @@ export function TerminalView({ project, autoFocus = true }: { project: string | 
   const [isTouch] = useState(
     () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true,
   );
+  // Voice dictation via Deepgram (gateway /voice proxy). Available only when the server has a key
+  // (dgAvailable); otherwise the mic button doesn't show, the feature is opt-in like the usage addon.
+  const [dgAvailable, setDgAvailable] = useState(false);
+  const voiceAvailable = dgAvailable;
+  const voiceRef = useRef<{ stop: () => void } | null>(null); // active Deepgram stream, when used
+  const [listening, setListening] = useState(false);
+  const listeningRef = useRef(false); // desired state (mic feature on/off)
+  // Command mode: dictation is on by default while listening; a "<wake> <verb>" phrase runs a
+  // command. `composingRef` (read in callbacks) gates typing; `dictating`/`hint` drive the label.
+  const composingRef = useRef(false); // dictation active; read in callbacks (ref, always current)
+  const [dictating, setDictating] = useState(false); // same, for rendering the standby/dictating label
+  const [hint, setHint] = useState<string | null>(null);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Is a Deepgram key configured server-side? Gates the whole mic feature.
+  useEffect(() => {
+    if (status !== "ready") return;
+    gateway
+.req<{ available: boolean }>("voice.available")
+.then((r) => setDgAvailable(!!r.available))
+.catch(() => {});
+  }, [gateway, status]);
 
   // Paste = clipboard → terminal input (right-click on desktop, button on mobile).
   // Safety: strip control chars (a stray tmux prefix / ESC in the clipboard would otherwise
@@ -90,6 +118,93 @@ export function TerminalView({ project, autoFocus = true }: { project: string | 
     }
     if (text) void navigator.clipboard?.writeText(text).catch(() => {});
   }
+
+  // A short-lived on-screen note of what the recognizer just did (testing aid).
+  function flash(msg: string) {
+    setHint(msg);
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    hintTimer.current = setTimeout(() => setHint(null), 1800);
+  }
+  function setComposingMode(on: boolean) {
+    composingRef.current = on;
+    setDictating(on);
+  }
+  // Type dictated text into the session, same path as the touch bar.
+  function typeText(s: string) {
+    const clean = s.replace(/[\x00-\x1f\x7f]/g, "").trim();
+    if (clean) termRef.current?.input(clean + " ");
+  }
+  // Run a wake-word command. Dictation is ON by default while the mic is listening, so there's no
+  // "message" command, speech is typed unless it's a "<wake> <verb>" command. "go" submits (Enter),
+  // "clear" wipes (Ctrl-U); both stay in dictation. "stop" turns the mic off. ("go" instead of
+  // "enter"/"send", which mis-hear.)
+  function runCommand(cmd: string, payload: string) {
+    const type = (seq: string) => termRef.current?.input(seq);
+    void payload; // reserved; dictation is the default so no command carries a text payload now
+    switch (cmd) {
+      case "start": setComposingMode(true); flash("● dictating"); break;
+      case "stop": setComposingMode(false); flash("⏸ paused , say command start"); break;
+      case "clear": type("\x15"); flash("✦ cleared"); break;
+      case "send": type("\r"); flash("✦ sent"); break;
+      case "escape": type("\x1b"); flash("✦ escape"); break;
+      case "interrupt": type("\x03"); flash("✦ interrupt"); break;
+      case "up": type("\x1b[A"); flash("✦ up"); break;
+      case "down": type("\x1b[B"); flash("✦ down"); break;
+      default: flash(`✦ ${cmd}`);
+    }
+  }
+  // Parse one finalized transcript. Fully gated: with no wake word, text is only typed while
+  // composing (otherwise ignored). A wake word splits the chunk into message-so-far + command.
+  function handleTranscript(raw: string) {
+    const text = raw.replace(/[\x00-\x1f\x7f]/g, "").trim();
+    if (!text) return;
+    // The wake word only counts as a command when immediately followed by a VALID verb; a plain
+    // "command" in a sentence stays literal. Scan for the first "<wake> <validVerb>".
+    const re = new RegExp(`\\b${WAKE}\\b\\s+([a-z]+)`, "gi");
+    let found: { index: number; full: string; verb: string } | null = null;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      const verb = (m[1] ?? "").toLowerCase();
+      if (COMMANDS.has(verb)) { found = { index: m.index, full: m[0] ?? "", verb }; break; }
+    }
+    if (!found) {
+      if (composingRef.current) typeText(text); // literal (idle = ignored, strict gate)
+      return;
+    }
+    const before = text.slice(0, found.index).trim();
+    if (before && composingRef.current) typeText(before);
+    const payload = text.slice(found.index + found.full.length).trim();
+    runCommand(found.verb, payload);
+  }
+
+  // Toggle the mic. While on, dictation is the default (speech is typed); a "<wake> <verb>" phrase
+  // runs a command instead (go = Enter, clear, stop = mic off, up/down/escape/interrupt).
+  function toggleMic() {
+    if (!voiceAvailable) return;
+    if (listeningRef.current) {
+      listeningRef.current = false;
+      setListening(false);
+      setComposingMode(false);
+      flash("mic off");
+      if (voiceRef.current) { voiceRef.current.stop(); voiceRef.current = null; }
+      return;
+    }
+    // Stream the mic to Deepgram via /voice; finalized transcripts feed the command parser. Starts
+    // in standby (not dictating) , say "command start" to begin.
+    listeningRef.current = true;
+    setListening(true);
+    setComposingMode(false);
+    flash("standby , say command start");
+    startVoiceStream({ onText: handleTranscript, onStatus: flash })
+.then((h) => { if (listeningRef.current) voiceRef.current = h; else h.stop(); })
+.catch(() => { listeningRef.current = false; setListening(false); flash("voice failed"); });
+  }
+
+  // Stop listening if the terminal unmounts (project/mode switch, split close).
+  useEffect(() => () => {
+    listeningRef.current = false;
+    if (voiceRef.current) { voiceRef.current.stop(); voiceRef.current = null; }
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+  }, []);
 
   // Focus follows the split's focused panel. `autoFocus` is only read at open below, which was
   // enough while focus could ONLY change by clicking (the click focuses the terminal itself), 
@@ -301,23 +416,46 @@ export function TerminalView({ project, autoFocus = true }: { project: string | 
               paste();
             }}
           />
-          {/* Copy/Paste toolbar: works on touch where there's no right-click or Shift. */}
-          <div className="absolute right-2.5 top-2.5 z-20 flex gap-1">
+          {/* Terminal utilities (mic, copy, paste). Bottom-right: Claude Code's TUI leaves more
+              empty space at the bottom of the render than the top, so controls there overlap content
+              less. Works on touch, where there's no right-click or Shift. */}
+          <div className="absolute bottom-2.5 right-2.5 z-20 flex items-stretch gap-1.5">
+            {/* Testing indicator: what the recognizer last heard/did, and the current mode. */}
+            {listening && (
+              <span className="pointer-events-none grid place-items-center rounded-md border border-accent/40 bg-black/60 px-2 font-mono text-[11px] text-accent backdrop-blur">
+                {hint ?? (dictating ? "● dictating" : "standby · say command start")}
+              </span>
+            )}
+            {voiceAvailable && (
+              <button
+                onClick={toggleMic}
+                title={listening ? "Stop dictation" : "Dictate (speech to text)"}
+                aria-label={listening ? "Stop dictation" : "Start dictation"}
+                aria-pressed={listening}
+                className={`grid size-9 place-items-center rounded-md border backdrop-blur transition-colors ${
+                  listening
+                    ? "border-accent bg-accent/25 text-accent animate-pulse"
+                    : "border-line bg-black/40 text-muted hover:text-ink"
+                }`}
+              >
+                <Microphone size={17} weight="bold" />
+              </button>
+            )}
             <button
               onClick={copy}
               title="Copy selection (or visible screen)"
               aria-label="Copy"
-              className="grid size-7 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
+              className="grid size-9 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
             >
-              <Copy size={14} weight="bold" />
+              <Copy size={17} weight="bold" />
             </button>
             <button
               onClick={paste}
               title="Paste from clipboard"
               aria-label="Paste"
-              className="grid size-7 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
+              className="grid size-9 place-items-center rounded-md border border-line bg-black/40 text-muted backdrop-blur transition-colors hover:text-ink"
             >
-              <ClipboardText size={14} weight="bold" />
+              <ClipboardText size={17} weight="bold" />
             </button>
           </div>
           {booting && (

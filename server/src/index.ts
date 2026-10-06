@@ -9,6 +9,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { handleVoice } from "./voice.js";
 import { createGateway } from "./gateway.js";
 import { bootstrapConfig, defaultProjectsRoot } from "./bootstrap.js";
 import { formatChecks, realProbe, runChecks } from "./doctor.js";
@@ -136,8 +137,17 @@ const httpServer = createServer(async (req, res) => {
   }
 });
 
-const wss = new WebSocketServer({ server: httpServer });
+// Two WS endpoints on one port: the main gateway protocol, and /voice (Deepgram STT proxy). Route
+// upgrades by path so streaming audio never mixes with the JSON protocol.
+const wss = new WebSocketServer({ noServer: true });
 gateway.attach(wss);
+const voiceWss = new WebSocketServer({ noServer: true });
+voiceWss.on("connection", (ws) => handleVoice(ws));
+httpServer.on("upgrade", (req, socket, head) => {
+  const path = (req.url ?? "/").split("?")[0];
+  const target = path === "/voice" ? voiceWss: wss;
+  target.handleUpgrade(req, socket, head, (ws) => target.emit("connection", ws, req));
+});
 
 httpServer.listen(port, host, () => {
   console.log(`[burrow] gateway on http://${host}:${port}  (web terminal + ws, projects root: ${projectsRoot})`);
