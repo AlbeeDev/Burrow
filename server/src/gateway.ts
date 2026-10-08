@@ -99,6 +99,8 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
 .start()
 .then((script) => {
       mcp.registerBurrow(script);
+      const newlyOff = mcp.reconcileAll();
+      if (newlyOff.length) audit("mcp_default_off", { servers: newlyOff });
       audit("image_bridge_up", { socket: socketPath(), script });
     })
 .catch((err: unknown) => {
@@ -274,6 +276,10 @@ export function createGateway(opts: { token: string; projectsRoot: string; port:
     project: string | null,
   ): Promise<{ launchCommand?: string; injectEnv?: Record<string, string> }> {
     if (!project) return {};
+    // Default any MCP server new to THIS project to off before the session spawns, so a server
+    // added since setup never leaks on. A server already seen here is left as the user set it.
+    const reconcileCwd = await resolveCwd(project);
+    if (reconcileCwd) mcp.reconcile(reconcileCwd);
     const token = accounts.activeToken();
     return {
       launchCommand: claudeLaunchCommand(),

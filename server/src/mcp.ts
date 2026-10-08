@@ -27,8 +27,8 @@
  */
 
 import { homedir } from "node:os";
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 const KEY = "disabledMcpServers";
 
@@ -108,5 +108,90 @@ export class McpManager {
   /** disallowedTools entries that switch off this project's disabled servers at spawn. */
   disallowedTools(cwd: string): string[] {
     return this.disabled(cwd).map((s) => `mcp__${s}`);
+  }
+
+  /**
+   * Burrow's own per-project record of user-scope MCP servers and their on/off state, in the data
+   * dir (not the CLI config). This is the managed layer: the CLI's per-project disable list is the
+   * moving thing, and reconcile() decides what to do against this record. Shape:
+   * `{ "<cwd>": { "<server>": <true when on> } }`. Deliberately separate from the CLI store, and
+   * only ever a record of what Burrow has *seen*, so it can never diverge into a second truth for
+   * the actual on/off state (that stays the CLI's), which was the old `disabledMcpByProject` bug.
+   */
+  private registryFile(): string {
+    const base = process.env.BURROW_DATA_DIR?.trim() || join(homedir(), ".burrow");
+    return join(base, "known-mcp.json");
+  }
+
+  private readRegistry(): Record<string, Record<string, boolean>> {
+    try {
+      const projects = JSON.parse(readFileSync(this.registryFile(), "utf8"))?.projects;
+      return projects && typeof projects === "object" ? projects : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private writeRegistry(reg: Record<string, Record<string, boolean>>): void {
+    const file = this.registryFile();
+    mkdirSync(dirname(file), { recursive: true });
+    const tmp = `${file}.burrow-${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ projects: reg }, null, 2));
+    renameSync(tmp, file);
+  }
+
+  /**
+   * Reconcile one project against Burrow's registry, and return the servers it newly turned off.
+   *
+   * - A server Burrow has already seen for this project is the user's to decide: its current CLI
+   *   on/off is absorbed back into the registry, so a manual `/mcp` enable sticks and is never
+   *   re-disabled.
+   * - A server Burrow has NOT seen for this project is new: it is forced OFF in the CLI config and
+   *   recorded off.
+   * - The first time a project is seen, the registry is seeded from its current CLI state and
+   *   nothing is changed (so existing choices, and the one-time stopgaps, are preserved).
+   *
+   * `burrow` is never turned off. New-project defaulting stays with the create-time hook, which
+   * disables everything before the first launch, so this seeds that project already-off.
+   */
+  reconcile(cwd: string): string[] {
+    const reg = this.readRegistry();
+    const off = this.applyToProject(cwd, reg);
+    this.writeRegistry(reg);
+    return off;
+  }
+
+  /** Reconcile every project the CLI knows about (gateway startup), in one registry write. */
+  reconcileAll(): string[] {
+    const reg = this.readRegistry();
+    const projects = readJson(claudeJson()).projects;
+    const cwds = projects && typeof projects === "object" ? Object.keys(projects) : [];
+    const off: string[] = [];
+    for (const cwd of cwds) off.push(...this.applyToProject(cwd, reg));
+    this.writeRegistry(reg);
+    return off;
+  }
+
+  /** Core per-project reconcile. Mutates `reg[cwd]` and the CLI's disabled list; returns newly-off. */
+  private applyToProject(cwd: string, reg: Record<string, Record<string, boolean>>): string[] {
+    const current = serverNames(claudeJson());
+    const disabled = new Set(this.disabled(cwd));
+    const seeded = reg[cwd] !== undefined;
+    const known = reg[cwd] ?? {};
+    const next: Record<string, boolean> = {};
+    const newlyOff: string[] = [];
+    for (const s of current) {
+      if (s === "burrow") {
+        next[s] = true;
+      } else if (!seeded || s in known) {
+        next[s] = !disabled.has(s); // seed, or a known server: follow the CLI's current state
+      } else {
+        if (!disabled.has(s)) { disabled.add(s); newlyOff.push(s); } // new: force off
+        next[s] = false;
+      }
+    }
+    reg[cwd] = next;
+    if (newlyOff.length) this.setDisabled(cwd, [...disabled]);
+    return newlyOff;
   }
 }

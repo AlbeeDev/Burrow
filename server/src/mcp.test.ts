@@ -14,6 +14,7 @@ import { McpManager } from "./mcp.js";
 
 let tmp: string;
 let saved: string | undefined;
+let savedData: string | undefined;
 const A = "/root/alpha";
 const B = "/root/beta";
 
@@ -38,11 +39,15 @@ beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "mcp-"));
   saved = process.env.CLAUDE_CONFIG_DIR;
   process.env.CLAUDE_CONFIG_DIR = tmp;
+  savedData = process.env.BURROW_DATA_DIR;
+  process.env.BURROW_DATA_DIR = join(tmp, "data");
 });
 
 afterAll(async () => {
   if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = saved;
+  if (savedData === undefined) delete process.env.BURROW_DATA_DIR;
+  else process.env.BURROW_DATA_DIR = savedData;
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -119,5 +124,85 @@ describe("McpManager (shares the CLI's per-project store)", () => {
     const mcp = new McpManager();
     expect(mcp.disabled(A)).toEqual([]);
     expect(mcp.servers()).toEqual([]);
+  });
+});
+
+describe("McpManager.reconcile (per-project managed layer)", () => {
+  const registry = () => join(tmp, "data", "known-mcp.json");
+  beforeEach(async () => {
+    await rm(registry(), { force: true });
+  });
+
+  it("first encounter of a project seeds from the CLI state and changes nothing", async () => {
+    await seed({
+      projects: { [A]: { hasTrustDialogAccepted: true, disabledMcpServers: ["context7"] } },
+    });
+    const mcp = new McpManager();
+    expect(mcp.reconcile(A)).toEqual([]);
+    expect(mcp.disabled(A)).toEqual(["context7"]); // untouched
+  });
+
+  it("forces a server added after a project is known to off, for that project", async () => {
+    const mcp = new McpManager();
+    mcp.reconcile(A); // seed A with codegraph/context7/playwright (all on)
+    await seed({
+      mcpServers: { codegraph: {}, context7: {}, playwright: {}, blender: {} },
+      projects: { [A]: { hasTrustDialogAccepted: true } },
+    });
+    expect(mcp.reconcile(A)).toEqual(["blender"]);
+    expect(mcp.disabled(A)).toEqual(["blender"]);
+  });
+
+  it("absorbs a manual /mcp enable and never re-disables it", async () => {
+    await seed({
+      mcpServers: { codegraph: {}, blender: {} },
+      projects: { [A]: { hasTrustDialogAccepted: true, disabledMcpServers: ["blender"] } },
+    });
+    const mcp = new McpManager();
+    mcp.reconcile(A); // seeds: blender known + off
+    mcp.setDisabled(A, []); // user re-enables blender via /mcp
+    expect(mcp.reconcile(A)).toEqual([]); // known -> state absorbed, not re-forced
+    expect(mcp.disabled(A)).toEqual([]); // stays enabled
+  });
+
+  it("never forces burrow off", async () => {
+    const mcp = new McpManager();
+    mcp.reconcile(A); // seed without burrow
+    await seed({
+      mcpServers: { codegraph: {}, burrow: {} },
+      projects: { [A]: { hasTrustDialogAccepted: true } },
+    });
+    expect(mcp.reconcile(A)).toEqual([]);
+    expect(mcp.disabled(A)).toEqual([]);
+  });
+
+  it("tracks projects independently: forced off where known, seeded as-is where new", async () => {
+    await seed({
+      mcpServers: { codegraph: {} },
+      projects: { [A]: { hasTrustDialogAccepted: true }, [B]: { hasTrustDialogAccepted: true } },
+    });
+    const mcp = new McpManager();
+    mcp.reconcile(A); // A seeded; B never seen
+    await seed({
+      mcpServers: { codegraph: {}, blender: {} },
+      projects: { [A]: { hasTrustDialogAccepted: true }, [B]: { hasTrustDialogAccepted: true } },
+    });
+    expect(mcp.reconcile(A)).toEqual(["blender"]); // new for A -> off
+    expect(mcp.reconcile(B)).toEqual([]); // B's first encounter -> seed, absorb as-is
+    expect(mcp.disabled(A)).toEqual(["blender"]);
+    expect(mcp.disabled(B)).toEqual([]);
+  });
+
+  it("reconcileAll forces a newly-added server off in every known project", async () => {
+    const mcp = new McpManager();
+    mcp.reconcile(A); // seed A
+    mcp.reconcile(B); // seed B
+    await seed({
+      mcpServers: { codegraph: {}, context7: {}, playwright: {}, blender: {} },
+      projects: { [A]: { hasTrustDialogAccepted: true }, [B]: { hasTrustDialogAccepted: true } },
+    });
+    expect(mcp.reconcileAll().sort()).toEqual(["blender", "blender"]); // once per project
+    expect(mcp.disabled(A)).toEqual(["blender"]);
+    expect(mcp.disabled(B)).toEqual(["blender"]);
   });
 });
